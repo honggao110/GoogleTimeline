@@ -8,7 +8,7 @@ output: html_document
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # © 2016 Hong Gao, NYU mHealth, All Rights Reserved
 
-###################
+##################
 # load libraries #
 ##################
 

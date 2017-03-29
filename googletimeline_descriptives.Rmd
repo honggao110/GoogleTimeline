@@ -105,14 +105,14 @@ gt.track <- gt.track[order(gt.track$id, gt.track$datetime),]
 
 ### Descriptives 
 
-**Total number of points per person**
+####Total number of points per person
 
 ```{r message=FALSE, warning=FALSE}
 total.track <- count(gt.track, c("uid", "id"))
 total.track
 ```
 
-**Number of points per person by day**
+####Number of points per person by day
 
 ```{r message=FALSE, warning=FALSE}
 # generate dates
@@ -136,7 +136,7 @@ for (i in ids) {
 }
 ```
 
-**Calculating stay events**
+####Calculating stay events
 
 ```{r message=FALSE, warning=FALSE}
 gt.track <- stayevent(gt.track, coor = c("longitude", "latitude"), 
@@ -150,7 +150,7 @@ gt.stay <- gt.stay[!is.na(gt.stay$stayeventlat),]
 gt.stay <- subset(gt.stay, stayeventlon < -70 & gt.stay$stayeventlat < 41)
 ```
 
-**Visualizing stay events**
+####Visualizing stay events
 
 ```{r message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
 # transform stay events from data frame to spatial points

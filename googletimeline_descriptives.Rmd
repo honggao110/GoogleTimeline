@@ -1,0 +1,178 @@
+---
+title: "Google Timeline Data Preview"
+author: "Hong Gao"
+date: "`r format(Sys.time(), '%d %B, %Y %H:%M')` EST"
+output: html_document
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# © 2016 Hong Gao, NYU mHealth, All Rights Reserved
+
+##################
+# load libraries #
+##################
+
+if(!require("jsonlite")){
+  install.packages("jsonlite")
+  library("jsonlite")
+} else {
+  library("jsonlite")
+}
+if(!require("plyr")){
+  install.packages("plyr")
+  library("plyr")
+} else {
+  library("plyr")
+}
+if(!require("ggplot2")){
+  install.packages("ggplot2")
+  library("ggplot2")
+} else {
+  library("ggplot2")
+}
+if(!require("devtools")){
+  install.packages("devtools")
+  library("devtools")
+} else {
+  library("devtools")
+}
+if(!require("Mobility")){
+  install_github("nyu-mhealth/Mobility")
+  library("Mobility")
+} else {
+  library("Mobility")
+}
+if(!require("rgdal")){
+  install.packages("rgdal")
+  library("rgdal")
+} else {
+  library("rgdal")
+}
+if(!require("ggmap")){
+  install.packages("ggmap")
+  library("ggmap")
+} else {
+  library("ggmap")
+}
+if(!require("leaflet")){
+  install.packages("leaflet")
+  library("leaflet")
+} else {
+  library("leaflet")
+}
+if(!require("magrittr")){
+  install.packages("magrittr")
+  library("magrittr")
+} else {
+  library("magrittr")
+}
+```
+
+### Google Timeline Data Source
+
+Locations are recorded through Google Map or Google apps and shared with us securely. Downloaded data 
+is in zip file, need to unzip and extract the json files. 
+
+```{r message=FALSE, warning=FALSE}
+# define file path
+file.path <- "~/Downloads/test"
+# change directory to file path
+setwd(file.path)
+# get all the file names in the folder
+file.name <- list.files()
+
+# load all the files with a loop
+gt.track <- NULL
+for (i in file.name) {
+  location <- jsonlite::fromJSON(unzip(i, 
+                                     files = "Takeout/Location History/LocationHistory.json"))
+  location <- location$locations
+  # remove the .zip in file name and append it as a unique id
+  location$uid <- substr(i, 1, nchar(i)-4)
+  gt.track <- rbind(gt.track, location)
+}
+
+# change time and location format
+gt.track$timestampMs <- as.numeric(gt.track$timestampMs)/1000
+gt.track$datetime <- as.POSIXct(gt.track$timestampMs, origin="1970-01-01")
+gt.track$latitude <- gt.track$latitudeE7/1E7
+gt.track$longitude <- gt.track$longitudeE7/1E7
+
+# give each person an unique id number
+gt.track <- transform(gt.track, id = as.numeric(interaction(uid, drop=TRUE)))
+gt.track <- gt.track[order(gt.track$id, gt.track$datetime),]
+```
+
+### Descriptives 
+
+**Total number of points per person**
+
+```{r message=FALSE, warning=FALSE}
+total.track <- count(gt.track, c("uid", "id"))
+total.track
+```
+
+**Number of points per person by day**
+
+```{r message=FALSE, warning=FALSE}
+# generate dates
+gt.track$date <- as.Date(gt.track$datetime, format = "%Y-%m-%d")
+day.track <- count(gt.track, c("uid", "id", "date"))
+day.track
+```
+
+Plots of points per day
+
+```{r message=FALSE, warning=FALSE}
+# loop through each id
+ids <- unique(gt.track$id)
+for (i in ids) {
+  p <- ggplot(gt.track[gt.track$id == i,], aes(date))
+  p <- p + geom_bar() + 
+    labs(title = paste0("id = ", i)) + 
+    theme(panel.background=element_blank()) + 
+    theme(panel.background= element_rect(color="black"))
+  print(p)
+}
+```
+
+**Calculating stay events**
+
+```{r message=FALSE, warning=FALSE}
+gt.track <- stayevent(gt.track, coor = c("longitude", "latitude"), 
+                      time = "datetime", dist.threshold = 50, 
+                      time.threshold = 30, time.units = "mins", 
+                      groupvar = "id")
+# aggragate a data frame with only stayevents
+gt.stay <- unique(gt.track[c("id", "uid", "stayeventgroup", 
+                             "date", "stayeventlon", "stayeventlat")])
+gt.stay <- gt.stay[!is.na(gt.stay$stayeventlat),]
+gt.stay <- subset(gt.stay, stayeventlon < -70 & gt.stay$stayeventlat < 41)
+```
+
+**Visualizing stay events**
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
+# transform stay events from data frame to spatial points
+coordinates(gt.stay) <- c("stayeventlon", "stayeventlat")
+# extract bounding box of the points
+gt.stay.box <- as.numeric(bbox(gt.stay))
+names(gt.stay.box) <- c("left", "bottom", "right", "top")
+# plot
+# map<- ggmap(get_map(location = gt.stay.box, source = "stamen", color = "bw"))
+# ggmap(get_stamenmap(gt.stay.box, zoom = 12, maptype = "toner-lite"))
+gt.stay <- data.frame(gt.stay)
+gt.stay$id_factor <- as.factor(gt.stay$id)
+qmplot(stayeventlon, stayeventlat, data = gt.stay, maptype = "toner-lite", 
+       color = gt.stay$id_factor, zoom = 12, legend = F)
+```
+
+```{r message=FALSE, warning=FALSE}
+# use leaflet package to produce an interactive map
+pal <- colorFactor("RdYlBu", domain = levels(gt.stay$uid))
+leaflet(data = gt.stay) %>% addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircleMarkers(~stayeventlon, ~stayeventlat, radius = 6, 
+             color = ~pal(uid), stroke = FALSE, fillOpacity = 0.7, 
+             popup = ~as.character(uid), label = ~as.character(uid))
+
+```

@@ -80,6 +80,7 @@ file.path <- "~/Downloads/test"
 setwd(file.path)
 # get all the file names in the folder
 file.name <- list.files()
+file.name <- file.name[file.name != "Takeout"]
 
 # load all the files with a loop
 gt.track <- NULL
@@ -138,10 +139,13 @@ for (i in ids) {
 
 ####Calculating stay events
 
+Stay events are defined as being within 50 meters of the previous GPS point for at least 10 minutes. Both 
+distance and time thresholds are adjustable. 
+
 ```{r message=FALSE, warning=FALSE}
 gt.track <- stayevent(gt.track, coor = c("longitude", "latitude"), 
                       time = "datetime", dist.threshold = 50, 
-                      time.threshold = 30, time.units = "mins", 
+                      time.threshold = 10, time.units = "mins", 
                       groupvar = "id")
 # aggragate a data frame with only stayevents
 gt.stay <- unique(gt.track[c("id", "uid", "stayeventgroup", 
@@ -150,7 +154,15 @@ gt.stay <- gt.stay[!is.na(gt.stay$stayeventlat),]
 gt.stay <- subset(gt.stay, stayeventlon < -70 & gt.stay$stayeventlat < 41)
 ```
 
+
 ####Visualizing stay events
+
+**Raw tracks and stay events**
+
+The map contains two layers showing raw mobility tracks and calculated stay events, which can 
+be turned on and off through the layer control on the upper right corner. The color scheme 
+indicates different individuals. 
+
 
 ```{r message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
 # transform stay events from data frame to spatial points
@@ -169,10 +181,62 @@ qmplot(stayeventlon, stayeventlat, data = gt.stay, maptype = "toner-lite",
 
 ```{r message=FALSE, warning=FALSE}
 # use leaflet package to produce an interactive map
-pal <- colorFactor("RdYlBu", domain = levels(gt.stay$uid))
-leaflet(data = gt.stay) %>% addProviderTiles(providers$CartoDB.Positron) %>%
-  addCircleMarkers(~stayeventlon, ~stayeventlat, radius = 6, 
-             color = ~pal(uid), stroke = FALSE, fillOpacity = 0.7, 
-             popup = ~as.character(uid), label = ~as.character(uid))
+pal1 <- colorFactor("RdYlBu", domain = levels(gt.stay$uid))
+pal2 <- colorFactor(c("firebrick2", "blue2"), domain = levels(gt.track$uid))
+# leaflet(data = gt.stay) %>% addProviderTiles(providers$CartoDB.Positron) %>%
+#   addCircleMarkers(~stayeventlon, ~stayeventlat, radius = 6, 
+#              color = ~pal1(uid), stroke = FALSE, fillOpacity = 0.7, 
+#              popup = ~as.character(uid), label = ~as.character(uid))
 
+leaflet(data = gt.stay) %>% addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircleMarkers(data = gt.track, ~longitude, ~latitude, radius = 4, 
+                   group = "raw points", 
+             color = ~pal1(uid), stroke = FALSE, fillOpacity = 0.6, 
+             popup = ~as.character(uid), label = ~as.character(datetime)) %>% 
+    addCircleMarkers(~stayeventlon, ~stayeventlat, radius = 6, group = "stayevents", 
+             color = ~pal2(uid), stroke = FALSE, fillOpacity = 0.7, 
+             popup = ~as.character(uid), label = ~as.character(uid)) %>% 
+  addLayersControl(
+    overlayGroups = c("stayevents", "raw points"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+
+**Stay events by dates**
+
+Visualize all the stay events for id = 2 by dates. Dates can be turned on and off as well. 
+
+
+```{r message=FALSE, warning=FALSE}
+# by dates
+gt.stay1 <- gt.stay[gt.stay$id == 2,]
+gt.stay1$date1 <- as.factor(gt.stay1$date)
+
+quakes <- quakes %>%
+  dplyr::mutate(mag.level = cut(mag,c(3,4,5,6),
+                                labels = c('>3 & <=4', '>4 & <=5', '>5 & <=6')))
+
+gt.stay1.df <- split(gt.stay1, gt.stay1$date1)
+
+l <- leaflet() %>% addProviderTiles(providers$CartoDB.Positron)
+
+names(gt.stay1.df) %>%
+  purrr::walk( function(df) {
+    l <<- l %>%
+      addMarkers(data = gt.stay1.df[[df]],
+                          lng=~stayeventlon, lat=~stayeventlat,
+                          label=~as.character(uid),
+                          popup=~as.character(date),
+                          group = df,
+                          clusterOptions = markerClusterOptions(removeOutsideVisibleBounds = F),
+                          labelOptions = labelOptions(noHide = F,
+                                                       direction = 'auto'))
+  })
+
+l %>%
+  addLayersControl(
+    overlayGroups = names(gt.stay1.df),
+    options = layersControlOptions(collapsed = FALSE)
+  )
 ```

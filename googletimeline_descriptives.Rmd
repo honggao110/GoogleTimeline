@@ -66,6 +66,12 @@ if(!require("magrittr")){
 } else {
   library("magrittr")
 }
+if(!require("RColorBrewer")){
+  install.packages("RColorBrewer")
+  library("RColorBrewer")
+} else {
+  library("RColorBrewer")
+}
 ```
 
 ### Google Timeline Data Source
@@ -151,7 +157,7 @@ gt.track <- stayevent(gt.track, coor = c("longitude", "latitude"),
 gt.stay <- unique(gt.track[c("id", "uid", "stayeventgroup", 
                              "date", "stayeventlon", "stayeventlat")])
 gt.stay <- gt.stay[!is.na(gt.stay$stayeventlat),]
-gt.stay <- subset(gt.stay, stayeventlon < -70 & gt.stay$stayeventlat < 41)
+#gt.stay <- subset(gt.stay, stayeventlon < -70 & gt.stay$stayeventlat < 41)
 ```
 
 
@@ -240,3 +246,46 @@ l %>%
     options = layersControlOptions(collapsed = FALSE)
   )
 ```
+
+####Calculate stay points
+
+Stay points are defined as the latent locations people have been to. They are extracted 
+based on stay events but without the temporal element. With stay points defined, we can 
+decide if multiple stay events happen at the same place. Further, we can calculate return 
+probabilities and rank order places people have been to. 
+
+**test kmeans method**
+
+```{r message=FALSE, warning=FALSE}
+# in order to avoid longer processing time if stay events are scattered far away, 
+# stay events that are clustered using kmeans method are processed together
+lat.id1 <- gt.stay1$stayeventlat
+lon.id1 <- gt.stay1$stayeventlon
+# run kmeans for 2-15 centers and see which number results in the smallest withinss
+cluster.summary <- NULL
+set.seed(20)
+for (i in 2:15){
+  km <- kmeans(cbind(lat.id1, lon.id1), centers = i, nstart = 20)
+  cluster.i <- c(i, sum(km$withinss))
+  cluster.summary <- data.frame(rbind(cluster.summary, cluster.i))
+}
+cluster.n <- cluster.summary[cluster.summary$X2 == min(cluster.summary$X2),]$X1
+# rerun kmeans clustering using cluster.n as the number of clusters
+km <- kmeans(cbind(lat.id1, lon.id1), centers = cluster.n, nstart = 20)
+# merge cluster number back to the points
+gt.stay1$cluster.n <- km$cluster
+# visualize the clusters
+pal3 <- colorRampPalette(brewer.pal(8, "Accent"))
+pal4 <- colorFactor(pal3(cluster.n), domain = levels(gt.stay1$cluster.n))
+leaflet(data = gt.stay1) %>% addProviderTiles(providers$CartoDB.Positron) %>% 
+    addCircleMarkers(~stayeventlon, ~stayeventlat, radius = 6, group = "stayevents", 
+             color = ~pal4(cluster.n), stroke = FALSE, fillOpacity = 0.7, 
+             popup = ~as.character(uid), label = ~as.character(date))
+```
+
+**Loop through clusters to find stay points**
+
+```{r message=FALSE, warning=FALSE}
+
+```
+
